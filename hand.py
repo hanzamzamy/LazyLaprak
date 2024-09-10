@@ -1,13 +1,34 @@
 import drawing
 from rnn import rnn
-
-
 import numpy as np
 import svgwrite
 
 
 import logging
 import os
+
+import io
+from PIL import Image, ImageDraw
+import cairosvg
+
+# Function to check if a line intersects with any existing elements in the SVG
+def does_line_intersect(dwg, x1, y1, x2, y2):
+    for element in dwg.elements:
+        if isinstance(element, svgwrite.shapes.Line):
+            ex1 = float(element.attribs['x1'])
+            ey1 = float(element.attribs['y1'])
+            ex2 = float(element.attribs['x2'])
+            ey2 = float(element.attribs['y2'])
+            if lines_intersect(x1, y1, x2, y2, ex1, ey1, ex2, ey2):
+                return True
+    return False
+
+# Function to check if two lines intersect
+def lines_intersect(x1, y1, x2, y2, ex1, ey1, ex2, ey2):
+    def ccw(A, B, C):
+        return (C[1]-A[1]) * (B[0]-A[0]) > (B[1]-A[1]) * (C[0]-A[0])
+    return ccw((x1, y1), (ex1, ey1), (ex2, ey2)) != ccw((x2, y2), (ex1, ey1), (ex2, ey2)) and ccw((x1, y1), (x2, y2), (ex1, ey1)) != ccw((x1, y1), (x2, y2), (ex2, ey2))
+
 
 class Hand(object):
 
@@ -75,7 +96,6 @@ class Hand(object):
             for i, (cs, style) in enumerate(zip(lines, styles)):
                 x_p = np.load('styles/style-{}-strokes.npy'.format(style))
                 c_p = np.load('styles/style-{}-chars.npy'.format(style)).tostring().decode('utf-8')
-
                 c_p = str(c_p) + " " + cs
                 c_p = drawing.encode_ascii(c_p)
                 c_p = np.array(c_p)
@@ -83,6 +103,8 @@ class Hand(object):
                 x_prime_len[i] = len(x_p)
                 chars[i, :len(c_p)] = c_p
                 chars_len[i] = len(c_p)
+                # print(drawing.decode_ascii(c_p))
+                
 
         else:
             for i in range(num_samples):
@@ -161,8 +183,8 @@ class Hand(object):
         vertical_offset = (line_height_px - font_height) / 2
         horizontal_offset = font_width
         initial_coord = np.array([horizontal_offset, -y_lines[0] - vertical_offset])
-        for offsets, line, color, width in zip(strokes, lines, stroke_colors, stroke_widths):
-
+        
+        for iteration_number, (offsets, line, color, width) in enumerate(zip(strokes, lines, stroke_colors, stroke_widths)):
             if not line:
                 initial_coord[1] -= line_height_px  # Move to the next line
                 continue
@@ -181,15 +203,55 @@ class Hand(object):
             
             prev_eos = 1.0
             p = "M{},{} ".format(0, 0)
+            p_2 = "M{},{} ".format(0, 0)
+            
+            prev_coord = (0,0)
+            space_threshold = 10  # Threshold to consider a space between words
+            # Buffer for vertical lines
+            vertical_lines = []
+            stroke_lines = []
+            drawn_x_values = set()  # Set to keep track of drawn x values
+
             for x, y, eos in zip(*strokes.T):
                 p += '{}{},{} '.format('M' if prev_eos == 1.0 else 'L', x, y)
+                            
+                if eos == 0.0 and prev_eos != 1.0:
+                    drawn_x_values.add(int(x))
+                    
+                if prev_coord != (0, 0) and prev_eos != eos:  # Skip the initial value
+                    # dwg.add(dwg.line(start=(int(prev_coord[0]),int(prev_coord[1])), end=(int(x), int(y)), stroke="green", stroke_width=width))
+                    x_start = float(prev_coord[0])
+                    y_start = box_y + iteration_number * line_height_px
+                    x_end = float(x)
+                    y_end = box_y + (iteration_number+1) * line_height_px
+                    x_min = min(x_start, x_end)
+                    x_max = max(x_start, x_end)
+                    for x_interp in range(int(x_min) + 1, int(x_max)):
+                        vertical_lines.append({
+                            'start': (x_interp, y_start),
+                            'end': (x_interp, y_end),
+                            'stroke': 'red',
+                            'stroke_width': 1,
+                            'stroke_opacity': 0.5
+                        })
                 prev_eos = eos
+                prev_coord = (x, y)
+            
             path = svgwrite.path.Path(p)
             path = path.stroke(color=color, width=width, linecap='round').fill("none")
             dwg.add(path)
-            start_x, start_y = strokes[-1, 0], strokes[-1, 1]
-            print(start_x, box_x + box_width)
-            dwg.add(dwg.circle(center=(int(start_x), int(start_y)), r=5, fill='red'))
+            
+            for vline in vertical_lines:
+                x1, y1 = vline['start']
+                x2, y2 = vline['end']
+                if x1 not in drawn_x_values:
+                    dwg.add(dwg.line(start=vline['start'], end=vline['end'], stroke=vline['stroke'], stroke_width=vline['stroke_width'], stroke_opacity=vline['stroke_opacity']))
+            
+            
+            # # Draw at the end of the last stroke on the line
+            # start_x, start_y = strokes[-1, 0], strokes[-1, 1]
+            # print(start_x, box_x + box_width)
+            # dwg.add(dwg.circle(center=(int(start_x), int(start_y)), r=5, fill='red'))
 
             initial_coord[1] -= line_height_px  # Move to the next line
 
