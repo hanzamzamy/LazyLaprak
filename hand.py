@@ -177,7 +177,7 @@ class Hand(object):
             y = box_y + i * line_height_px
             dwg.add(dwg.line(start=(box_x, y), end=(box_x + box_width, y), stroke='black', stroke_width=0.5))
 
-        text_scale = 0.85
+        text_scale = 0.7
         font_height = 18 * text_scale
         font_width = 18 * text_scale
         vertical_offset = (line_height_px - font_height) / 2
@@ -202,51 +202,58 @@ class Hand(object):
                 strokes[0,0] = box_x
             
             prev_eos = 1.0
-            p = "M{},{} ".format(0, 0)
-            p_2 = "M{},{} ".format(0, 0)
-            
-            prev_coord = (0,0)
-            space_threshold = 10  # Threshold to consider a space between words
-            # Buffer for vertical lines
-            vertical_lines = []
-            stroke_lines = []
+            space_threshold = 3  # Threshold to consider a space between words
             drawn_x_values = set()  # Set to keep track of drawn x values
 
             for x, y, eos in zip(*strokes.T):
-                p += '{}{},{} '.format('M' if prev_eos == 1.0 else 'L', x, y)
-                            
                 if eos == 0.0 and prev_eos != 1.0:
                     drawn_x_values.add(int(x))
-                    
-                if prev_coord != (0, 0) and prev_eos != eos:  # Skip the initial value
-                    # dwg.add(dwg.line(start=(int(prev_coord[0]),int(prev_coord[1])), end=(int(x), int(y)), stroke="green", stroke_width=width))
-                    x_start = float(prev_coord[0])
-                    y_start = box_y + iteration_number * line_height_px
-                    x_end = float(x)
-                    y_end = box_y + (iteration_number+1) * line_height_px
-                    x_min = min(x_start, x_end)
-                    x_max = max(x_start, x_end)
-                    for x_interp in range(int(x_min) + 1, int(x_max)):
-                        vertical_lines.append({
-                            'start': (x_interp, y_start),
-                            'end': (x_interp, y_end),
-                            'stroke': 'red',
-                            'stroke_width': 1,
-                            'stroke_opacity': 0.5
-                        })
                 prev_eos = eos
-                prev_coord = (x, y)
+            
+            # Calculate uninterrupted x_not_drawn lengths
+            x_not_drawn = [x for x in range(box_x, box_x + box_width) if x not in drawn_x_values]
+            uninterrupted_segments = []
+            current_segment = []
+
+            for i in range(len(x_not_drawn) - 1):
+                if x_not_drawn[i] + 1 == x_not_drawn[i + 1]:
+                    current_segment.append(x_not_drawn[i])
+                else:
+                    if current_segment:
+                        current_segment.append(x_not_drawn[i])
+                        uninterrupted_segments.append(current_segment)
+                    current_segment = []
+
+            if current_segment:
+                current_segment.append(x_not_drawn[-1])
+                uninterrupted_segments.append(current_segment)
+
+            # Identify segments that are spaces
+            spaces = [segment for segment in uninterrupted_segments if len(segment) > space_threshold]
+            
+            
+            # Calculate total offset needed
+            total_offset = box_x + box_width - strokes[-1, 0]
+
+            # Distribute the offset across the strokes
+            current_offset = 0
+            space_index = 0
+            num_spaces = len(spaces)
+
+            for i in range(len(strokes)):
+                if space_index < num_spaces and strokes[i, 0] > spaces[space_index][-1]:
+                    current_offset += total_offset / num_spaces
+                    space_index += 1
+                strokes[i, 0] += current_offset
+
+            p = "M{},{} ".format(0, 0)
+            for x, y, eos in zip(*strokes.T):
+                p += '{}{},{} '.format('M' if prev_eos == 1.0 else 'L', x, y)
+                prev_eos = eos
             
             path = svgwrite.path.Path(p)
             path = path.stroke(color=color, width=width, linecap='round').fill("none")
             dwg.add(path)
-            
-            for vline in vertical_lines:
-                x1, y1 = vline['start']
-                x2, y2 = vline['end']
-                if x1 not in drawn_x_values:
-                    dwg.add(dwg.line(start=vline['start'], end=vline['end'], stroke=vline['stroke'], stroke_width=vline['stroke_width'], stroke_opacity=vline['stroke_opacity']))
-            
             
             # # Draw at the end of the last stroke on the line
             # start_x, start_y = strokes[-1, 0], strokes[-1, 1]
