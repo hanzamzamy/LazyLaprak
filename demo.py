@@ -17,7 +17,7 @@ if __name__ == '__main__':
         "nyoba flkasjfdkasdjf pass is not enabled",
         "nyoba dikatakanlah pass is not enabled"
     ]
-    biases = [0.75 for i in lines]
+    biases = [0.85 for i in lines]
     styles = [7 for i in lines]
     stroke_widths = [1 for i in lines]
 

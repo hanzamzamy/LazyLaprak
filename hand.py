@@ -11,24 +11,38 @@ import io
 from PIL import Image, ImageDraw
 import cairosvg
 
-# Function to check if a line intersects with any existing elements in the SVG
-def does_line_intersect(dwg, x1, y1, x2, y2):
-    for element in dwg.elements:
-        if isinstance(element, svgwrite.shapes.Line):
-            ex1 = float(element.attribs['x1'])
-            ey1 = float(element.attribs['y1'])
-            ex2 = float(element.attribs['x2'])
-            ey2 = float(element.attribs['y2'])
-            if lines_intersect(x1, y1, x2, y2, ex1, ey1, ex2, ey2):
-                return True
-    return False
+def get_spaces(strokes, box_x, box_width, space_threshold, space_min_x_threshold):
+    prev_eos = 1.0
+    drawn_x_values = set()  # Set to keep track of drawn x values
 
-# Function to check if two lines intersect
-def lines_intersect(x1, y1, x2, y2, ex1, ey1, ex2, ey2):
-    def ccw(A, B, C):
-        return (C[1]-A[1]) * (B[0]-A[0]) > (B[1]-A[1]) * (C[0]-A[0])
-    return ccw((x1, y1), (ex1, ey1), (ex2, ey2)) != ccw((x2, y2), (ex1, ey1), (ex2, ey2)) and ccw((x1, y1), (x2, y2), (ex1, ey1)) != ccw((x1, y1), (x2, y2), (ex2, ey2))
+    for x, y, eos in zip(*strokes.T):
+        if eos == 0.0 and prev_eos != 1.0:
+            drawn_x_values.add(int(x))
+        prev_eos = eos
+    
+    # Calculate uninterrupted x_not_drawn lengths
+    x_not_drawn = [x for x in range(box_x, box_x + box_width) if x not in drawn_x_values]
+    uninterrupted_segments = []
+    current_segment = []
 
+    for i in range(len(x_not_drawn) - 1):
+        if x_not_drawn[i] + 1 == x_not_drawn[i + 1]:
+            current_segment.append(x_not_drawn[i])
+        else:
+            if current_segment:
+                current_segment.append(x_not_drawn[i])
+                uninterrupted_segments.append(current_segment)
+            current_segment = []
+
+    if current_segment:
+        current_segment.append(x_not_drawn[-1])
+        uninterrupted_segments.append(current_segment)
+
+    # Identify segments that are spaces
+    spaces = [segment for segment in uninterrupted_segments if len(segment) > space_threshold]
+    if spaces and (spaces[0][0] - box_x) < space_min_x_threshold:
+        del spaces[0]
+    return spaces
 
 class Hand(object):
 
@@ -180,6 +194,8 @@ class Hand(object):
         text_scale = 0.7
         font_height = 18 * text_scale
         font_width = 18 * text_scale
+        space_threshold = 3  # Threshold to consider a space between words
+        space_min_x_threshold = 30  # Minimum x value to consider a space between words
         vertical_offset = (line_height_px - font_height) / 2
         horizontal_offset = font_width
         initial_coord = np.array([horizontal_offset, -y_lines[0] - vertical_offset])
@@ -201,51 +217,45 @@ class Hand(object):
             if strokes[0,0] < box_x: # Avoid the first stroke clipping outside tatakan
                 strokes[0,0] = box_x
             
-            prev_eos = 1.0
-            space_threshold = 3  # Threshold to consider a space between words
-            drawn_x_values = set()  # Set to keep track of drawn x values
-
-            for x, y, eos in zip(*strokes.T):
-                if eos == 0.0 and prev_eos != 1.0:
-                    drawn_x_values.add(int(x))
-                prev_eos = eos
-            
-            # Calculate uninterrupted x_not_drawn lengths
-            x_not_drawn = [x for x in range(box_x, box_x + box_width) if x not in drawn_x_values]
-            uninterrupted_segments = []
-            current_segment = []
-
-            for i in range(len(x_not_drawn) - 1):
-                if x_not_drawn[i] + 1 == x_not_drawn[i + 1]:
-                    current_segment.append(x_not_drawn[i])
-                else:
-                    if current_segment:
-                        current_segment.append(x_not_drawn[i])
-                        uninterrupted_segments.append(current_segment)
-                    current_segment = []
-
-            if current_segment:
-                current_segment.append(x_not_drawn[-1])
-                uninterrupted_segments.append(current_segment)
-
-            # Identify segments that are spaces
-            spaces = [segment for segment in uninterrupted_segments if len(segment) > space_threshold]
-            
+            spaces = get_spaces(strokes, box_x, box_width, space_threshold, space_min_x_threshold)    
             
             # Calculate total offset needed
-            total_offset = box_x + box_width - strokes[-1, 0]
+            total_offset = 0
+            if len(spaces) > 1:
+                last_word_end = strokes[-1, 0]
+                total_offset = (box_x + box_width) - last_word_end
 
-            # Distribute the offset across the strokes
+            # Find the index of the last word strokes
+            last_word_start_index = None
+            if len(spaces) > 1:
+                second_last_space_end = spaces[-2][-1]
+                for i in range(len(strokes)):
+                    if strokes[i, 0] > second_last_space_end:
+                        last_word_start_index = i
+                        break
+
+            # Apply the total offset to the last word
+            if last_word_start_index is not None:
+                for i in range(last_word_start_index, len(strokes)):
+                    strokes[i, 0] += total_offset
+            
+            # Recalculate the spaces
+            spaces = get_spaces(strokes, box_x, box_width, space_threshold, space_min_x_threshold)
+            
+            
+            # Distribute the offset across the strokes between the first and last word
             current_offset = 0
             space_index = 0
-            num_spaces = len(spaces)
+            num_spaces = len(spaces) - 1  # Exclude the last space
 
             for i in range(len(strokes)):
                 if space_index < num_spaces and strokes[i, 0] > spaces[space_index][-1]:
                     current_offset += total_offset / num_spaces
                     space_index += 1
-                strokes[i, 0] += current_offset
+                if last_word_start_index is not None and i < last_word_start_index:
+                    strokes[i, 0] += current_offset
 
+            prev_eos = 1.0
             p = "M{},{} ".format(0, 0)
             for x, y, eos in zip(*strokes.T):
                 p += '{}{},{} '.format('M' if prev_eos == 1.0 else 'L', x, y)
