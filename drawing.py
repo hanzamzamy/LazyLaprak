@@ -76,6 +76,14 @@ def encode_ascii(ascii_string):
     """
     return np.array(list(map(lambda x: alpha_to_num[x], ascii_string)) + [0])
 
+# Create a reverse mapping dictionary
+num_to_alpha = {v: k for k, v in alpha_to_num.items()}
+
+def decode_ascii(encoded):
+    """
+    Decodes array of ints back to ascii string
+    """
+    return ''.join(num_to_alpha.get(num, '') for num in encoded if num != 0)
 
 def denoise(coords):
     """
