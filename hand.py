@@ -186,7 +186,11 @@ class Hand(object):
             
             actual_length = strokes[-1, 0] - strokes[0, 0]
             approximate_length = approximate_line_length(line, font_width, char_widths)
-            print(actual_length, approximate_length)
+            
+            if approximate_length > actual_length:
+                print(f"Warning: Approximate length ({approximate_length}) is longer than actual length ({actual_length}) on line {iteration_number + 1}")
+            # else:
+            #     print(f"Approximate length ({approximate_length}) is shorter than actual length ({actual_length}) on line {iteration_number + 1}")
             
             spaces = get_spaces(strokes, box_x, box_width, space_threshold, space_min_x_threshold)    
             
