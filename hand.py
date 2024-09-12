@@ -10,6 +10,8 @@ import os
 import io
 from PIL import Image, ImageDraw
 import cairosvg
+from const import *
+
 
 def get_spaces(strokes, box_x, box_width, space_threshold, space_min_x_threshold):
     prev_eos = 1.0
@@ -147,64 +149,29 @@ class Hand(object):
         stroke_colors = stroke_colors or ['black']*len(lines)
         stroke_widths = stroke_widths or [2]*len(lines)
 
-        # A4 page dimensions in mm (1mm ≈ 3.78 pixels)
-        a4_width_mm = 210
-        a4_height_mm = 297
-        a4_width_px = int(a4_width_mm * 3.78)
-        a4_height_px = int(a4_height_mm * 3.78)
-
-        view_width = a4_width_px
-        view_height = a4_height_px
-
+        # Create the canvas for the SVG
         dwg = svgwrite.Drawing(filename=filename, size=(view_width, view_height))
         dwg.viewbox(width=view_width, height=view_height)
         dwg.add(dwg.rect(insert=(0, 0), size=(view_width, view_height), fill='white'))
 
-        # Margins in cm
-        left_margin_cm = 4
-        right_margin_cm = 3
-        top_margin_cm = 3
-        bottom_margin_cm = 3.3
-
-        left_margin_px = int(left_margin_cm * 37.8)
-        right_margin_px = int(right_margin_cm * 37.8)
-        top_margin_px = int(top_margin_cm * 37.8)
-        bottom_margin_px = int(bottom_margin_cm * 37.8)
-
-        # Define the dimensions and position of the box
-        box_x = left_margin_px
-        box_y = top_margin_px
-        box_width = view_width - left_margin_px - right_margin_px
-        box_height = view_height - top_margin_px - bottom_margin_px
-
         # Add the thin box to the SVG
-        dwg.add(dwg.rect(insert=(box_x, box_y), size=(box_width, box_height), stroke='black', fill='none', stroke_width=1))
-
-        # Calculate the height of each line
-        num_lines = 32
-        line_height_px = box_height / num_lines
+        if draw_tatakan:
+            dwg.add(dwg.rect(insert=(box_x, box_y), size=(box_width, box_height), stroke='black', fill='none', stroke_width=1))
         
         y_lines = [box_y + i * line_height_px for i in range(num_lines)]
 
         # Draw horizontal lines within the box
         for i in range(1, num_lines):
             y = box_y + i * line_height_px
-            dwg.add(dwg.line(start=(box_x, y), end=(box_x + box_width, y), stroke='black', stroke_width=0.5))
+            if draw_tatakan:
+                dwg.add(dwg.line(start=(box_x, y), end=(box_x + box_width, y), stroke='black', stroke_width=0.5))
 
-        text_scale = 0.7
-        font_height = 18 * text_scale
-        font_width = 18 * text_scale
-        space_threshold = 3  # Threshold to consider a space between words
-        space_min_x_threshold = 30  # Minimum x value to consider a space between words
-        vertical_offset = (line_height_px - font_height) / 2
-        horizontal_offset = font_width
-        initial_coord = np.array([horizontal_offset, -y_lines[0] - vertical_offset])
-        
+        initial_coord = np.array([horizontal_offset, -y_lines[0] - vertical_offset])        
         for iteration_number, (offsets, line, color, width) in enumerate(zip(strokes, lines, stroke_colors, stroke_widths)):
             if not line:
                 initial_coord[1] -= line_height_px  # Move to the next line
                 continue
-
+            
             offsets[:, :2] *= text_scale
             strokes = drawing.offsets_to_coords(offsets)
             strokes = drawing.denoise(strokes)
@@ -216,6 +183,10 @@ class Hand(object):
             
             if strokes[0,0] < box_x: # Avoid the first stroke clipping outside tatakan
                 strokes[0,0] = box_x
+            
+            actual_length = strokes[-1, 0] - strokes[0, 0]
+            approximate_length = approximate_line_length(line, font_width, char_widths)
+            print(actual_length, approximate_length)
             
             spaces = get_spaces(strokes, box_x, box_width, space_threshold, space_min_x_threshold)    
             
@@ -264,11 +235,6 @@ class Hand(object):
             path = svgwrite.path.Path(p)
             path = path.stroke(color=color, width=width, linecap='round').fill("none")
             dwg.add(path)
-            
-            # # Draw at the end of the last stroke on the line
-            # start_x, start_y = strokes[-1, 0], strokes[-1, 1]
-            # print(start_x, box_x + box_width)
-            # dwg.add(dwg.circle(center=(int(start_x), int(start_y)), r=5, fill='red'))
 
             initial_coord[1] -= line_height_px  # Move to the next line
 
