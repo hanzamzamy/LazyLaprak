@@ -1,4 +1,3 @@
-"""lyrics taken from https://www.azlyrics.com/"""
 
 all_star = """Somebody once told me the world is gonna roll me
 I ain't the sharpest tool in the shed

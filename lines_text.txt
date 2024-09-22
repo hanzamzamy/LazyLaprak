@@ -1,0 +1,32 @@
+This module explores various aspects of pneumatic and
+electro-pneumatic systems, demonstrating their applications in
+automation and control. The first experiment introduces the behavior of a
+single-acting cylinder controlled by 32-way valves, showcasing the
+difference between Normally Open (NO) and Normally Closed (NC) valves.
+The NC valve allows air flow and extends the cylinder only when pressed,
+while the NO valve allows air flow when released, highlighting the
+fundamental differences in their control behavior. In the second
+experiment, logical circuits are introduced using AND and OR
+configurations. These circuits, implemented with pneumatic valves, show
+how air flow and cylinder movement can be controlled based on logic
+gates. The AND circuit requires both an NC valve to be pressed and an NO
+valve to be released for the cylinder to extend, while the OR circuit
+allows air flow if either condition is met. This demonstrates the
+flexibility of pneumatic control using basic logic functions. The third
+experiment focuses on the indirect control of a single-acting cylinder
+through roller lever valves. Both right and left roller lever
+configurations are explored, with the right valve allowing air flow when
+pressed and the left valve doing so when released. This experiment
+emphasizes how directional control of the lever influences cylinder
+movement and how positioning of the lever plays a critical role in
+controlling pneumatic systems. The fourth experiment integrates relays
+for electrical control of pneumatic systems, using AND and OR circuits to
+govern the extension of the cylinder. By combining push buttons and
+relays, this experiment illustrates how electrical signals can be used to
+manage pneumatic operations, offering a hybrid solution for automation.
+The AND circuit requires both buttons to be pressed for the cylinder to
+extend, while the OR circuit activates with either button, providing
+flexibility in control. The fifth experiment applies electro-pneumatic
+principles to a practical barrier control system with indicator lamps.
+Using both single-acting and double-acting cylinders, the system is
+controlled by push buttons, with visual feedback provided by LEDs.

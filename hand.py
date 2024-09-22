@@ -3,6 +3,7 @@ from rnn import rnn
 import numpy as np
 import svgwrite
 
+from datetime import datetime
 
 import logging
 import os
@@ -10,7 +11,7 @@ import os
 import io
 from PIL import Image, ImageDraw
 import cairosvg
-from const import *
+from config import *
 
 
 def get_spaces(strokes, box_x, box_width, space_threshold, space_min_x_threshold):
@@ -78,12 +79,12 @@ class Hand(object):
     def write(self, filename, lines, biases=None, styles=None, stroke_colors=None, stroke_widths=None):
         valid_char_set = set(drawing.alphabet)
         for line_num, line in enumerate(lines):
-            if len(line) > 75:
+            if len(line) > max_char_per_line:
                 raise ValueError(
                     (
-                        "Each line must be at most 75 characters. "
+                        "Each line must be at most {} characters. "
                         "Line {} contains {}"
-                    ).format(line_num, len(line))
+                    ).format(max_char_per_line,line_num, len(line))
                 )
 
             for char in line:
@@ -150,13 +151,19 @@ class Hand(object):
         stroke_widths = stroke_widths or [2]*len(lines)
 
         # Create the canvas for the SVG
-        dwg = svgwrite.Drawing(filename=filename, size=(view_width, view_height))
+        dwg = svgwrite.Drawing(filename=filename+".svg", size=(view_width, view_height))
         dwg.viewbox(width=view_width, height=view_height)
         dwg.add(dwg.rect(insert=(0, 0), size=(view_width, view_height), fill='white'))
 
         # Add the thin box to the SVG
         if draw_tatakan:
             dwg.add(dwg.rect(insert=(box_x, box_y), size=(box_width, box_height), stroke='black', fill='none', stroke_width=1))
+        
+        gcode_file = None
+        if gcode_output:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            gcode_file = open(filename+".gcode", 'w', encoding='utf-8')
+            gcode_file.write(gcode_header)
         
         y_lines = [box_y + i * line_height_px for i in range(num_lines)]
 
@@ -232,8 +239,15 @@ class Hand(object):
 
             prev_eos = 1.0
             p = "M{},{} ".format(0, 0)
+            px_to_mm = 0.264583  # Conversion factor from pixels to millimeters
             for x, y, eos in zip(*strokes.T):
                 p += '{}{},{} '.format('M' if prev_eos == 1.0 else 'L', x, y)
+                x_mm = x * px_to_mm
+                y_mm = y * px_to_mm
+                if prev_eos == 1.0:
+                    gcode_file.write(f"G0 X{x_mm:.10f} Y{297-y_mm:.10f} F{feedrate}\n")
+                else:
+                    gcode_file.write(f"G1 X{x_mm:.10f} Y{297-y_mm:.10f} F{feedrate}\n")
                 prev_eos = eos
             
             path = svgwrite.path.Path(p)
