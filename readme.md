@@ -1,4 +1,4 @@
-![](img/banner.svg)
+![](banner.jpeg)
 
 # LayzLaprak - Advanced Handwriting Synthesis System
 
