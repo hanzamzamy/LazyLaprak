@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handwriting Editor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/codemirror@5.65.0/lib/codemirror.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/codemirror@5.65.0/theme/monokai.css" rel="stylesheet">
+    <style>
+        .editor-container { height: 400px; }
+        .preview-container { max-height: 300px; overflow-y: auto; }
+        .word-item { 
+            display: inline-block; 
+            margin: 2px; 
+            padding: 2px 4px; 
+            border: 1px solid #ddd; 
+            border-radius: 3px; 
+            cursor: pointer; 
+        }
+        .word-item:hover { background-color: #f0f0f0; }
+        .word-item.custom { border-color: #007bff; background-color: #e7f3ff; }
+        .synthesis-progress { display: none; }
+        .word-versions { margin-top: 10px; }
+        .version-item { 
+            display: inline-block; 
+            margin: 5px; 
+            padding: 10px; 
+            border: 1px solid #ccc; 
+            border-radius: 5px; 
+            cursor: pointer; 
+        }
+        .version-item:hover { border-color: #007bff; }
+        .version-item.selected { border-color: #007bff; background-color: #e7f3ff; }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-12">
+                <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+                    <div class="container-fluid">
+                        <a class="navbar-brand" href="#">Handwriting Editor</a>
+                        <div class="navbar-nav ms-auto">
+                            <button class="btn btn-outline-light me-2" onclick="showTemplates()">Templates</button>
+                            <button class="btn btn-outline-light me-2" onclick="showHelp()">Help</button>
+                            <button class="btn btn-success" onclick="synthesizeDocument()">Synthesize</button>
+                        </div>
+                    </div>
+                </nav>
+            </div>
+        </div>
+
+        <div class="row mt-3">
+            <!-- Editor Panel -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Markup Editor</h5>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary" onclick="previewMarkup()">Preview</button>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="clearEditor()">Clear</button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="editor-container">
+                            <textarea id="markup-editor" class="form-control h-100" placeholder="Enter your markup text here...
+
+Example:
+[style:title]Document Title[/style]
+
+[style:heading1]Chapter 1[/style]
+[style:body]This is body text with [word:bias=1.5]custom[/word] word styling.[/style]
+
+[align:center]Centered text[/align]
+
+[bias:2.5]Text with custom bias[/bias]"></textarea>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="output-name" class="form-label">Output Name:</label>
+                                <input type="text" id="output-name" class="form-control" placeholder="document_name">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Document Stats:</label>
+                                <div id="doc-stats" class="text-muted">Words: 0, Characters: 0</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Preview Panel -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Preview & Word Tuning</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="preview-container" class="preview-container border p-3 mb-3">
+                            <p class="text-muted">Click "Preview" to see parsed markup structure</p>
+                        </div>
+                        
+                        <!-- Word Regeneration Panel -->
+                        <div id="word-tuning-panel" style="display: none;">
+                            <hr>
+                            <h6>Word Tuning</h6>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <label for="word-bias" class="form-label">Bias:</label>
+                                    <input type="number" id="word-bias" class="form-control" step="0.1" value="2.0">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="word-style" class="form-label">Style:</label>
+                                    <input type="number" id="word-style" class="form-control" value="20">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="word-attempts" class="form-label">Attempts:</label>
+                                    <input type="number" id="word-attempts" class="form-control" value="3" min="1" max="10">
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-primary" onclick="regenerateWord()">Regenerate Word</button>
+                                <button class="btn btn-sm btn-secondary" onclick="closeWordTuning()">Close</button>
+                            </div>
+                            <div id="word-versions" class="word-versions"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Synthesis Progress -->
+                <div class="card mt-3 synthesis-progress" id="synthesis-progress">
+                    <div class="card-header">
+                        <h5 class="mb-0">Synthesis Progress</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="progress mb-3">
+                            <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <div id="progress-message">Initializing...</div>
+                        <div id="synthesis-result" style="display: none;">
+                            <hr>
+                            <h6>Download Results:</h6>
+                            <div id="download-links"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Templates Modal -->
+    <div class="modal fade" id="templatesModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Document Templates</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="templates-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div class="modal fade" id="helpModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Markup Help</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <h6>Available Markup Tags:</h6>
+                    <ul>
+                        <li><code>[style:name]text[/style]</code> - Apply predefined style (title, heading1, heading2, heading3, body, quote, caption)</li>
+                        <li><code>[align:direction]text[/align]</code> - Set alignment (left, center, right, justify)</li>
+                        <li><code>[bias:value]text[/bias]</code> - Set custom bias value</li>
+                        <li><code>[word:bias=2.5,style=20]word[/word]</code> - Word-specific styling</li>
+                        <li><code>[page-break]</code> - Force page break</li>
+                        <li><code>[line-break]</code> - Force line break</li>
+                    </ul>
+                    
+                    <h6>Predefined Styles:</h6>
+                    <ul>
+                        <li><strong>title</strong> - Large, centered title text</li>
+                        <li><strong>heading1</strong> - Main section headings</li>
+                        <li><strong>heading2</strong> - Subsection headings</li>
+                        <li><strong>heading3</strong> - Minor headings</li>
+                        <li><strong>body</strong> - Regular paragraph text</li>
+                        <li><strong>quote</strong> - Quoted text</li>
+                        <li><strong>caption</strong> - Image/table captions</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+    <script>
+        // Initialize Socket.IO
+        const socket = io();
+        
+        let currentWord = null;
+        let currentTaskId = null;
+
+        // Socket event handlers
+        socket.on('connected', (data) => {
+            console.log('Connected to server:', data.message);
+        });
+
+        socket.on('synthesis_update', (data) => {
+            updateSynthesisProgress(data);
+        });
+
+        // Editor functions
+        function previewMarkup() {
+            const markupText = document.getElementById('markup-editor').value;
+            
+            fetch('/api/preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ markup: markupText })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displayPreview(data.preview);
+                    updateDocStats(data.word_count, markupText.length);
+                } else {
+                    alert('Preview error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Preview error:', error);
+                alert('Failed to preview markup');
+            });
+        }
+
+        function displayPreview(preview) {
+            const container = document.getElementById('preview-container');
+            container.innerHTML = '';
+
+            preview.forEach(block => {
+                if (block.type === 'break') {
+                    const breakEl = document.createElement('div');
+                    breakEl.className = 'text-muted fst-italic';
+                    breakEl.textContent = block.text === '[PAGE_BREAK]' ? '--- Page Break ---' : '--- Line Break ---';
+                    container.appendChild(breakEl);
+                } else {
+                    const blockEl = document.createElement('div');
+                    blockEl.className = 'mb-2';
+                    
+                    const styleInfo = document.createElement('small');
+                    styleInfo.className = 'text-muted';
+                    styleInfo.textContent = `[${block.style.alignment}, bias: ${block.style.bias}]`;
+                    blockEl.appendChild(styleInfo);
+                    
+                    const textEl = document.createElement('div');
+                    const words = block.text.split(/\s+/);
+                    
+                    words.forEach(word => {
+                        if (word.trim()) {
+                            const wordEl = document.createElement('span');
+                            wordEl.className = 'word-item';
+                            wordEl.textContent = word;
+                            
+                            if (block.custom_words[word]) {
+                                wordEl.className += ' custom';
+                                wordEl.title = `Custom: ${JSON.stringify(block.custom_words[word])}`;
+                            }
+                            
+                            wordEl.onclick = () => openWordTuning(word, block.style, block.custom_words[word] || {});
+                            textEl.appendChild(wordEl);
+                        }
+                    });
+                    
+                    blockEl.appendChild(textEl);
+                    container.appendChild(blockEl);
+                }
+            });
+        }
+
+        function openWordTuning(word, baseStyle, customParams) {
+            currentWord = word;
+            
+            document.getElementById('word-bias').value = customParams.bias || baseStyle.bias;
+            document.getElementById('word-style').value = customParams.style || baseStyle.style;
+            
+            document.getElementById('word-tuning-panel').style.display = 'block';
+            document.getElementById('word-versions').innerHTML = `<p>Tuning word: <strong>${word}</strong></p>`;
+        }
+
+        function closeWordTuning() {
+            document.getElementById('word-tuning-panel').style.display = 'none';
+            currentWord = null;
+        }
+
+        function regenerateWord() {
+            if (!currentWord) return;
+            
+            const bias = parseFloat(document.getElementById('word-bias').value);
+            const style = parseInt(document.getElementById('word-style').value);
+            const attempts = parseInt(document.getElementById('word-attempts').value);
+            
+            fetch('/api/regenerate_word', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    word: currentWord,
+                    bias: bias,
+                    style: style,
+                    attempts: attempts
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displayWordVersions(data.versions);
+                } else {
+                    alert('Regeneration error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Regeneration error:', error);
+                alert('Failed to regenerate word');
+            });
+        }
+
+        function displayWordVersions(versions) {
+            const container = document.getElementById('word-versions');
+            container.innerHTML = '<h6>Generated Versions:</h6>';
+            
+            versions.forEach((version, index) => {
+                const versionEl = document.createElement('div');
+                versionEl.className = 'version-item';
+                versionEl.innerHTML = `
+                    <strong>Version ${index + 1}</strong><br>
+                    <small>Bias: ${version.bias.toFixed(1)}, Style: ${version.style}</small><br>
+                    <small>Width: ${version.width.toFixed(1)}px</small>
+                `;
+                
+                versionEl.onclick = () => {
+                    document.querySelectorAll('.version-item').forEach(el => el.classList.remove('selected'));
+                    versionEl.classList.add('selected');
+                    
+                    // Update markup with selected parameters
+                    updateWordInMarkup(currentWord, version.bias, version.style);
+                };
+                
+                container.appendChild(versionEl);
+            });
+        }
+
+        function updateWordInMarkup(word, bias, style) {
+            const editor = document.getElementById('markup-editor');
+            const markupText = editor.value;
+            
+            // Simple replacement - in a real implementation, you'd want more sophisticated parsing
+            const wordTag = `[word:bias=${bias},style=${style}]${word}[/word]`;
+            
+            // For now, just show the user what to replace
+            alert(`Replace "${word}" with: ${wordTag}`);
+        }
+
+        function synthesizeDocument() {
+            const markupText = document.getElementById('markup-editor').value;
+            const outputName = document.getElementById('output-name').value || `document_${Date.now()}`;
+            
+            if (!markupText.trim()) {
+                alert('Please enter some markup text first');
+                return;
+            }
+            
+            document.getElementById('synthesis-progress').style.display = 'block';
+            document.getElementById('synthesis-result').style.display = 'none';
+            
+            fetch('/api/synthesize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    markup: markupText,
+                    output_name: outputName
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    currentTaskId = data.task_id;
+                } else {
+                    alert('Synthesis error: ' + data.error);
+                    document.getElementById('synthesis-progress').style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Synthesis error:', error);
+                alert('Failed to start synthesis');
+                document.getElementById('synthesis-progress').style.display = 'none';
+            });
+        }
+
+        function updateSynthesisProgress(data) {
+            if (data.task_id !== currentTaskId) return;
+            
+            const progressBar = document.getElementById('progress-bar');
+            const progressMessage = document.getElementById('progress-message');
+            
+            progressBar.style.width = data.progress + '%';
+            progressBar.textContent = data.progress + '%';
+            progressMessage.textContent = data.message;
+            
+            if (data.status === 'completed') {
+                document.getElementById('synthesis-result').style.display = 'block';
+                const downloadLinks = document.getElementById('download-links');
+                downloadLinks.innerHTML = `
+                    <a href="/api/download/${data.result.svg_filename.split('/').pop()}" class="btn btn-sm btn-primary me-2">Download SVG</a>
+                    <a href="/api/download/${data.result.metadata_filename.split('/').pop()}" class="btn btn-sm btn-secondary">Download Metadata</a>
+                    <a href="${data.viewer_url}" target="_blank" class="btn btn-primary btn-sm"><i class="bi bi-eye"></i> View Document</a>
+                `;
+            } else if (data.status === 'error') {
+                progressBar.className = 'progress-bar bg-danger';
+            }
+        }
+
+        function displayWordVersions(versions) {
+            const container = document.getElementById('word-versions');
+            container.innerHTML = '<h6>Generated Versions (click to apply):</h6>';
+            
+            versions.forEach((version, index) => {
+                const versionEl = document.createElement('div');
+                versionEl.className = 'version-item';
+                versionEl.innerHTML = `
+                    <strong>Version ${index + 1}</strong><br>
+                    <small>Bias: ${version.bias.toFixed(1)}, Style: ${version.style}</small><br>
+                    <small>Width: ${version.width.toFixed(1)}px</small>
+                `;
+                
+                versionEl.onclick = () => {
+                    // Show selection feedback
+                    document.querySelectorAll('.version-item').forEach(el => el.classList.remove('selected'));
+                    versionEl.classList.add('selected');
+                    
+                    // Apply the word regeneration
+                    applyWordRegeneration(currentWord, version.bias, version.style);
+                };
+                
+                container.appendChild(versionEl);
+            });
+        }
+
+        function applyWordRegeneration(word, bias, style) {
+            // Show loading state
+            const container = document.getElementById('word-versions');
+            const loadingEl = document.createElement('div');
+            loadingEl.className = 'alert alert-info mt-2';
+            loadingEl.textContent = 'Applying regeneration and updating document...';
+            container.appendChild(loadingEl);
+            
+            fetch('/api/apply_word_regeneration', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    word: word,
+                    bias: bias,
+                    style: style
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                loadingEl.remove();
+                
+                if (data.success) {
+                    // Show success and provide links to updated document
+                    const successEl = document.createElement('div');
+                    successEl.className = 'alert alert-success mt-2';
+                    successEl.innerHTML = `
+                        <strong>Word regenerated successfully!</strong><br>
+                        <a href="${data.viewer_url}" target="_blank" class="btn btn-sm btn-primary mt-2">
+                            View Updated Document
+                        </a>
+                        <a href="/api/download/${data.svg_filename}" class="btn btn-sm btn-outline-secondary mt-2 ms-2">
+                            Download
+                        </a>
+                    `;
+                    container.appendChild(successEl);
+                    
+                    // Update word overrides display
+                    updateWordOverridesDisplay(data.word_overrides);
+                    
+                } else {
+                    const errorEl = document.createElement('div');
+                    errorEl.className = 'alert alert-danger mt-2';
+                    errorEl.textContent = 'Error: ' + data.error;
+                    container.appendChild(errorEl);
+                }
+            })
+            .catch(error => {
+                loadingEl.remove();
+                console.error('Apply regeneration error:', error);
+                
+                const errorEl = document.createElement('div');
+                errorEl.className = 'alert alert-danger mt-2';
+                errorEl.textContent = 'Failed to apply word regeneration';
+                container.appendChild(errorEl);
+            });
+        }
+
+        function updateWordOverridesDisplay(overrides) {
+            // Add a section to show current word overrides
+            let overridesEl = document.getElementById('word-overrides-display');
+            if (!overridesEl) {
+                overridesEl = document.createElement('div');
+                overridesEl.id = 'word-overrides-display';
+                overridesEl.className = 'mt-3';
+                document.getElementById('word-tuning-panel').appendChild(overridesEl);
+            }
+            
+            if (Object.keys(overrides).length > 0) {
+                overridesEl.innerHTML = `
+                    <h6>Active Word Overrides:</h6>
+                    <div class="small">
+                        ${Object.entries(overrides).map(([word, params]) => 
+                            `<span class="badge bg-secondary me-1">${word} (bias: ${params.bias}, style: ${params.style})</span>`
+                        ).join('')}
+                    </div>
+                `;
+            } else {
+                overridesEl.innerHTML = '';
+            }
+        }        
+
+        function showTemplates() {
+            fetch('/api/templates')
+            .then(response => response.json())
+            .then(data => {
+                const container = document.getElementById('templates-list');
+                container.innerHTML = '';
+                
+                data.templates.forEach(templateName => {
+                    const templateEl = document.createElement('div');
+                    templateEl.className = 'card mb-3';
+                    templateEl.innerHTML = `
+                        <div class="card-header">
+                            <h6 class="mb-0">${templateName.replace('_', ' ').toUpperCase()}</h6>
+                        </div>
+                        <div class="card-body">
+                            <pre class="small">${data.template_data[templateName].substring(0, 200)}...</pre>
+                            <button class="btn btn-sm btn-primary" onclick="loadTemplate('${templateName}')">Load Template</button>
+                        </div>
+                    `;
+                    container.appendChild(templateEl);
+                });
+                
+                new bootstrap.Modal(document.getElementById('templatesModal')).show();
+            });
+        }
+
+        function loadTemplate(templateName) {
+            fetch('/api/templates')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('markup-editor').value = data.template_data[templateName];
+                bootstrap.Modal.getInstance(document.getElementById('templatesModal')).hide();
+            });
+        }
+
+        function showHelp() {
+            new bootstrap.Modal(document.getElementById('helpModal')).show();
+        }
+
+        function clearEditor() {
+            if (confirm('Clear all content?')) {
+                document.getElementById('markup-editor').value = '';
+                document.getElementById('preview-container').innerHTML = '<p class="text-muted">Click "Preview" to see parsed markup structure</p>';
+                updateDocStats(0, 0);
+            }
+        }
+
+        function updateDocStats(words, chars) {
+            document.getElementById('doc-stats').textContent = `Words: ${words}, Characters: ${chars}`;
+        }
+
+        // Auto-update stats when typing
+        document.getElementById('markup-editor').addEventListener('input', function() {
+            const text = this.value;
+            const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+            updateDocStats(words, text.length);
+        });
+    </script>
+</body>
+</html>

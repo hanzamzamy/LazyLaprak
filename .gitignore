@@ -7,3 +7,7 @@ logs
 predictions
 venv
 
+__pycache__
+*.pyc
+*.pyo
+*.pyd

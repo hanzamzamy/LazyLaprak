@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handwriting Document Viewer</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .viewer-container {
+            height: calc(100vh - 120px);
+            overflow: auto;
+            border: 1px solid #ddd;
+            background: #f8f9fa;
+            padding: 20px;
+        }
+        .svg-container {
+            background: white;
+            margin: 0 auto;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            padding: 20px;
+            max-width: fit-content;
+        }
+        .controls {
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 100;
+            padding: 10px 0;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .document-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .document-item {
+            cursor: pointer;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-bottom: 4px;
+        }
+        .document-item:hover {
+            background-color: #f8f9fa;
+        }
+        .document-item.active {
+            background-color: #e7f3ff;
+            border: 1px solid #007bff;
+        }
+        svg {
+            max-width: 100%;
+            height: auto;
+        }
+        .loading {
+            text-align: center;
+            padding: 50px;
+        }
+        .error {
+            color: #dc3545;
+            text-align: center;
+            padding: 50px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Documents</h5>
+                        <button class="btn btn-sm btn-outline-primary" onclick="refreshDocuments()">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="document-list" id="document-list">
+                            <div class="loading">Loading documents...</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Document Info -->
+                <div class="card mt-3" id="document-info" style="display: none;">
+                    <div class="card-header">
+                        <h6>Document Info</h6>
+                    </div>
+                    <div class="card-body">
+                        <div id="info-content"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Viewer -->
+            <div class="col-md-9">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5 id="document-title">Handwriting Document Viewer</h5>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="zoom-controls float-end">
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="zoomOut()">-</button>
+                                    <span id="zoom-level">100%</span>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="zoomIn()">+</button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="resetZoom()">Reset</button>
+                                    <button class="btn btn-sm btn-primary" onclick="downloadCurrent()" id="download-btn" disabled>
+                                        Download
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="viewer-container" id="viewer-container">
+                            <div class="text-center text-muted">
+                                <h4>Select a document to view</h4>
+                                <p>Choose a document from the sidebar to display it here.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentDocument = null;
+        let currentZoom = 1.0;
+        let documents = [];
+
+        // Initialize viewer
+        document.addEventListener('DOMContentLoaded', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const filename = urlParams.get('filename') || '{{ filename if filename else "" }}';
+            
+            loadDocuments().then(() => {
+                if (filename) {
+                    viewDocument(filename);
+                }
+            });
+        });
+
+        async function loadDocuments() {
+            try {
+                const response = await fetch('/api/documents');
+                const data = await response.json();
+                
+                if (data.documents) {
+                    documents = data.documents;
+                    displayDocuments(documents);
+                } else {
+                    document.getElementById('document-list').innerHTML = 
+                        '<div class="text-muted">No documents found</div>';
+                }
+            } catch (error) {
+                console.error('Error loading documents:', error);
+                document.getElementById('document-list').innerHTML = 
+                    '<div class="error">Error loading documents</div>';
+            }
+        }
+
+        function displayDocuments(docs) {
+            const listContainer = document.getElementById('document-list');
+            
+            if (docs.length === 0) {
+                listContainer.innerHTML = '<div class="text-muted">No documents found</div>';
+                return;
+            }
+
+            listContainer.innerHTML = docs.map(doc => `
+                <div class="document-item" onclick="viewDocument('${doc.filename}')" data-filename="${doc.filename}">
+                    <div><strong>${doc.name}</strong></div>
+                    <small class="text-muted">
+                        ${new Date(doc.created).toLocaleDateString()} - 
+                        ${doc.total_pages || 1} page(s) - 
+                        ${(doc.size / 1024).toFixed(1)} KB
+                    </small>
+                </div>
+            `).join('');
+        }
+
+        async function viewDocument(filename) {
+            if (!filename) return;
+
+            const viewerContainer = document.getElementById('viewer-container');
+            viewerContainer.innerHTML = '<div class="loading">Loading document...</div>';
+
+            // Update active document in list
+            document.querySelectorAll('.document-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.dataset.filename === filename) {
+                    item.classList.add('active');
+                }
+            });
+
+            try {
+                const response = await fetch(`/api/svg/${filename}`);
+                const data = await response.json();
+
+                if (data.svg_content) {
+                    currentDocument = filename;
+                    displaySVG(data.svg_content);
+                    updateDocumentInfo(filename);
+                    document.getElementById('download-btn').disabled = false;
+                    document.getElementById('document-title').textContent = filename.replace('.svg', '');
+                } else {
+                    throw new Error(data.error || 'Failed to load document');
+                }
+            } catch (error) {
+                console.error('Error loading document:', error);
+                viewerContainer.innerHTML = `<div class="error">Error loading document: ${error.message}</div>`;
+            }
+        }
+
+        function displaySVG(svgContent) {
+            const viewerContainer = document.getElementById('viewer-container');
+            viewerContainer.innerHTML = `
+                <div class="svg-container" id="svg-container">
+                    ${svgContent}
+                </div>
+            `;
+            
+            // Apply current zoom
+            applyZoom();
+        }
+
+        function updateDocumentInfo(filename) {
+            const doc = documents.find(d => d.filename === filename);
+            if (!doc) return;
+
+            const infoContainer = document.getElementById('info-content');
+            const infoCard = document.getElementById('document-info');
+            
+            infoContainer.innerHTML = `
+                <p><strong>Filename:</strong> ${doc.filename}</p>
+                <p><strong>Created:</strong> ${new Date(doc.created).toLocaleString()}</p>
+                <p><strong>Size:</strong> ${(doc.size / 1024).toFixed(1)} KB</p>
+                <p><strong>Pages:</strong> ${doc.total_pages || 1}</p>
+                <p><strong>Lines:</strong> ${doc.total_lines || 'N/A'}</p>
+            `;
+            
+            infoCard.style.display = 'block';
+        }
+
+        function zoomIn() {
+            currentZoom = Math.min(currentZoom * 1.2, 5.0);
+            applyZoom();
+        }
+
+        function zoomOut() {
+            currentZoom = Math.max(currentZoom / 1.2, 0.2);
+            applyZoom();
+        }
+
+        function resetZoom() {
+            currentZoom = 1.0;
+            applyZoom();
+        }
+
+        function applyZoom() {
+            const svgContainer = document.getElementById('svg-container');
+            if (svgContainer) {
+                svgContainer.style.transform = `scale(${currentZoom})`;
+                svgContainer.style.transformOrigin = 'top center';
+            }
+            
+            document.getElementById('zoom-level').textContent = Math.round(currentZoom * 100) + '%';
+        }
+
+        function downloadCurrent() {
+            if (currentDocument) {
+                window.open(`/api/download/${currentDocument}`, '_blank');
+            }
+        }
+
+        function refreshDocuments() {
+            loadDocuments();
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                switch(e.key) {
+                    case '=':
+                    case '+':
+                        e.preventDefault();
+                        zoomIn();
+                        break;
+                    case '-':
+                        e.preventDefault();
+                        zoomOut();
+                        break;
+                    case '0':
+                        e.preventDefault();
+                        resetZoom();
+                        break;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
