@@ -1,6 +1,6 @@
 ![](banner.jpeg)
 
-# LayzLaprak - Advanced Handwriting Synthesis System
+# LazyLaprak - Advanced Handwriting Synthesis System
 
 A comprehensive implementation of handwriting synthesis based on Alex Graves' paper ["Generating Sequences with Recurrent Neural Networks"](https://arxiv.org/abs/1308.0850), enhanced with modern features including web-based editing, markup support, flexible document layouts, and real-time preview capabilities.
 
@@ -317,9 +317,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- **Alex Graves** for the original research and paper
-- **Sean Vasquez** for the [initial implementation](https://github.com/sjvasquez/handwriting-synthesis)
+- **Alex Graves** for the original research and paper.
+- **Sean Vasquez** for the [initial implementation](https://github.com/sjvasquez/handwriting-synthesis).
 
 ---
 
-**LazyLaprak** - Akan kami usahakan hingga laprak tulis tangan hilang dari muka bumi.
+**LazyLaprak** - Apapun akan saya kerjakan kecuali nulis laprak.
