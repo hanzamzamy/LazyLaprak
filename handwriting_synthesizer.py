@@ -566,23 +566,33 @@ class AdvancedHandwritingSynthesizer:
         }]
     
     def _fit_words_to_line(self, words: List[str], max_width: float, style: TextStyle) -> Tuple[List[str], List[str]]:
-        """Fit words to a line based on estimated widths"""
+        """Fit words to a line based on estimated widths AND character limit"""
         fitted_words = []
         current_width = 0.0
+        current_chars = 0
         space_width = style.font_width * 0.3
         
         for i, word in enumerate(words):
             # Estimate word width
             word_width = len(word) * style.font_width * style.scale
+            word_chars = len(word)
             
             # Calculate total width including space
             total_width = current_width + word_width
+            total_chars = current_chars + word_chars
+            
             if fitted_words:  # Add space if not first word
                 total_width += space_width
+                total_chars += 1  # Count the space character
             
-            if total_width <= max_width:
+            # Check both width and character limits
+            width_ok = total_width <= max_width
+            chars_ok = total_chars <= text_config.max_chars_per_line
+            
+            if width_ok and chars_ok:
                 fitted_words.append(word)
                 current_width = total_width
+                current_chars = total_chars
             else:
                 # Return fitted words and remaining
                 return fitted_words, words[i:]
