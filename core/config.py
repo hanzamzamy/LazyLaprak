@@ -32,12 +32,12 @@ class PageMargins:
     odd_left: float = 4.0
     odd_right: float = 3.0
     odd_top: float = 3.0
-    odd_bottom: float = 3.3
+    odd_bottom: float = 3.0
     
     even_left: float = 3.0
     even_right: float = 4.0
     even_top: float = 3.0
-    even_bottom: float = 3.3
+    even_bottom: float = 3.0
     
     def get_margins(self, page_type: PageType) -> Tuple[float, float, float, float]:
         """Get margins as (left, right, top, bottom) for given page type"""
@@ -124,11 +124,12 @@ class DocumentConfig:
         bottom_px = int(bottom * self.page.cm_to_px)
         
         x = left_px
-        # Adjust top margin to account for text baseline (add font height)
-        y = top_px + int(text_config.font_height)  # Start at baseline, not top of text
+        # Use a local reference to text_config instead of the global one
+        font_height = 18.0 * 0.8  # base_font_size * scale from TextConfig
+        y = top_px + int(font_height)  # Start at baseline, not top of text
         width = self.page.width_px - left_px - right_px
         # Adjust height to account for baseline positioning
-        height = self.page.height_px - top_px - bottom_px - int(text_config.font_height)
+        height = self.page.height_px - top_px - bottom_px - int(font_height)
         
         return (x, y, width, height)
     

@@ -318,10 +318,16 @@ class AdvancedHandwritingSynthesizer:
         self.word_manager.add_word_override(word, bias, style)
         
         # Re-synthesize the document with the same parameters
+        if "_regenerated_" in self.current_output_name:
+            base_name = self.current_output_name.rsplit("_regenerated_", 1)[0]
+            output_name = f"{base_name}_regenerated_{int(time.time())}"
+        else:
+            output_name = f"{self.current_output_name}_regenerated_{int(time.time())}"
+        
         result = self.synthesize_document_with_markup(
             markup_text=self.current_markup,
             custom_margins=self.current_margins,
-            output_filename=f"output/{self.current_output_name}_regenerated_{int(time.time())}",
+            output_filename=f"output/{output_name}",
             progress_callback=None  # No progress callback for regeneration
         )
         
@@ -591,22 +597,25 @@ class AdvancedHandwritingSynthesizer:
         return fitted_words, []
     
     def _create_simple_line_layout(self, word_texts, strokes_list, line_number, style, 
-                                 text_area_x, text_area_y, text_area_width, page_number=1):
+                                text_area_x, text_area_y, text_area_width, page_number=1):
         """Create line layout using simple positioning"""
         from core.document_renderer import LineLayout, WordLayout, PageType
         
-        # Determine page type
+        # Determine page type - THIS IS CRITICAL
         page_type = PageType.ODD if page_number % 2 == 1 else PageType.EVEN
+        
+        # RECALCULATE text area for this specific page type
+        actual_text_area_x, actual_text_area_y, actual_text_area_width, actual_text_area_height = self.doc_config.get_text_area(page_type)
         
         # Calculate line number within the page
         line_within_page = line_number % self.doc_config.num_lines
         
-        # Calculate Y position within the page
-        y_position = text_area_y + (line_within_page * self.doc_config.line_height)
+        # Calculate Y position within the page using the recalculated text area
+        y_position = actual_text_area_y + (line_within_page * self.doc_config.line_height)
         
-        # Calculate word positions
+        # Calculate word positions using the correct text area
         word_positions = self._calculate_simple_word_positions(
-            word_texts, strokes_list, style.alignment, text_area_width, text_area_x, style
+            word_texts, strokes_list, style.alignment, actual_text_area_width, actual_text_area_x, style
         )
         
         # Create word layouts

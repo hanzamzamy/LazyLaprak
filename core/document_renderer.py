@@ -143,18 +143,9 @@ class DocumentRenderer:
         return abs(strokes[-1, 0] - strokes[0, 0])
     
     def render_to_svg(self, line_layouts: List[LineLayout], filename: str, 
-                     stroke_color: str = 'black', stroke_width: float = 1.0) -> str:
+                    stroke_color: str = 'black', stroke_width: float = 1.0) -> str:
         """
         Render the document to SVG format with proper multi-page support.
-        
-        Args:
-            line_layouts: List of line layouts to render
-            filename: Output filename (without extension)
-            stroke_color: Color for handwriting strokes
-            stroke_width: Width of strokes
-            
-        Returns:
-            Full path to the generated SVG file
         """
         svg_filename = f"{filename}.svg"
         
@@ -193,6 +184,7 @@ class DocumentRenderer:
         # Render each page
         for page_num in sorted(pages.keys()):
             page_lines = pages[page_num]
+            # Ensure correct page type determination
             page_type = PageType.ODD if page_num % 2 == 1 else PageType.EVEN
             
             # Calculate page Y offset
@@ -210,10 +202,10 @@ class DocumentRenderer:
                 stroke_width=0.5
             ))
             
-            # Get page-specific margins and text area
+            # Get page-specific margins and text area - RECALCULATE for this page
             text_area_x, text_area_y, text_area_width, text_area_height = self.doc_config.get_text_area(page_type)
             
-            # Add text area border if enabled
+            # Add text area border if enabled - show the actual margins being used
             if self.doc_config.draw_guidelines:
                 page_group.add(dwg.rect(
                     insert=(text_area_x, text_area_y + page_y_offset),
@@ -222,6 +214,15 @@ class DocumentRenderer:
                     fill='none',
                     stroke_width=0.5,
                     opacity=0.3
+                ))
+                
+                # Add margin info as text for debugging
+                left, right, top, bottom = self.doc_config.margins.get_margins(page_type)
+                page_group.add(dwg.text(
+                    f"Page {page_num} ({'Odd' if page_type == PageType.ODD else 'Even'}) - L:{left} R:{right}",
+                    insert=(10, page_y_offset + 20),
+                    fill='red',
+                    font_size='12px'
                 ))
                 
                 # Add line guidelines
@@ -234,18 +235,11 @@ class DocumentRenderer:
                         stroke_width=0.3,
                         opacity=0.3
                     ))
-                
-                # Add page number
-                page_group.add(dwg.text(
-                    f"Page {page_num} ({'Odd' if page_type == PageType.ODD else 'Even'})",
-                    insert=(self.doc_config.page.width_px - 100, page_y_offset + 20),
-                    fill='gray',
-                    font_size='10px',
-                    text_anchor='end'
-                ))
             
-            # Render lines on this page
+            # Render lines on this page - ensure they use the correct margins
             for line_layout in page_lines:
+                # Override the line's page type to ensure consistency
+                line_layout.page_type = page_type
                 for word_layout in line_layout.words:
                     # Adjust word position for page offset
                     adjusted_word = WordLayout(
