@@ -8,7 +8,7 @@ from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from datetime import datetime
 
-from .config import document_config, text_config, calculate_text_width, TextAlignment
+from .config import document_config, text_config, calculate_text_width, TextAlignment, PageType
 
 @dataclass
 class WordLayout:
@@ -18,6 +18,7 @@ class WordLayout:
     x_position: float
     y_position: float
     width: float
+    page_number: int = 1
 
 @dataclass
 class LineLayout:
@@ -26,6 +27,8 @@ class LineLayout:
     line_number: int
     alignment: TextAlignment
     y_position: float
+    page_number: int = 1
+    page_type: PageType = PageType.ODD
 
 class DocumentRenderer:
     """Renders processed text and handwriting strokes to SVG format"""
@@ -35,23 +38,32 @@ class DocumentRenderer:
         self.text_config = text_config
     
     def create_line_layout(self, words: List[str], strokes_list: List[np.ndarray], 
-                          line_number: int, alignment: TextAlignment) -> LineLayout:
+                          line_number: int, alignment: TextAlignment, 
+                          page_number: int = 1, page_type: PageType = PageType.ODD) -> LineLayout:
         """
         Create layout information for a line of text.
         
         Args:
             words: List of words in the line
             strokes_list: List of stroke arrays for each word
-            line_number: Line number (0-indexed)
+            line_number: Line number within the page (0-indexed)
             alignment: Text alignment for this line
+            page_number: Page number (1-indexed)
+            page_type: Odd or even page type
             
         Returns:
             LineLayout object with positioning information
         """
-        y_position = self.doc_config.text_area_y + (line_number * self.doc_config.line_height)
+        # Get page-specific margins and text area
+        text_area_x, text_area_y, text_area_width, text_area_height = self.doc_config.get_text_area(page_type)
+        
+        # Calculate Y position within the page
+        y_position = text_area_y + (line_number * self.doc_config.line_height)
         
         # Calculate word positions based on alignment
-        word_positions = self._calculate_word_positions(words, strokes_list, alignment)
+        word_positions = self._calculate_word_positions(
+            words, strokes_list, alignment, text_area_width, text_area_x
+        )
         
         # Create WordLayout objects
         word_layouts = []
@@ -63,18 +75,22 @@ class DocumentRenderer:
                 strokes=strokes,
                 x_position=x_pos,
                 y_position=y_position,
-                width=word_width
+                width=word_width,
+                page_number=page_number
             ))
         
         return LineLayout(
             words=word_layouts,
             line_number=line_number,
             alignment=alignment,
-            y_position=y_position
+            y_position=y_position,
+            page_number=page_number,
+            page_type=page_type
         )
     
     def _calculate_word_positions(self, words: List[str], strokes_list: List[np.ndarray], 
-                                 alignment: TextAlignment) -> List[float]:
+                                 alignment: TextAlignment, text_area_width: float, 
+                                 text_area_x: float) -> List[float]:
         """Calculate x positions for words based on alignment"""
         if not words:
             return []
@@ -92,25 +108,25 @@ class DocumentRenderer:
             word_widths.append(width)
         
         total_word_width = sum(word_widths)
-        total_space_width = (len(words) - 1) * space_width
+        total_space_width = (len(words) - 1) * space_width if len(words) > 1 else 0
         total_content_width = total_word_width + total_space_width
         
         if alignment == TextAlignment.LEFT:
-            x_pos = self.doc_config.text_area_x
+            x_pos = text_area_x
             for word_width in word_widths:
                 positions.append(x_pos)
                 x_pos += word_width + space_width
                 
         elif alignment == TextAlignment.RIGHT:
-            start_x = self.doc_config.text_area_x + self.doc_config.text_area_width - total_content_width
-            x_pos = start_x
+            start_x = text_area_x + text_area_width - total_content_width
+            x_pos = max(text_area_x, start_x)  # Don't go beyond left edge
             for word_width in word_widths:
                 positions.append(x_pos)
                 x_pos += word_width + space_width
                 
         elif alignment == TextAlignment.CENTER:
-            start_x = self.doc_config.text_area_x + (self.doc_config.text_area_width - total_content_width) / 2
-            x_pos = start_x
+            start_x = text_area_x + (text_area_width - total_content_width) / 2
+            x_pos = max(text_area_x, start_x)  # Don't go beyond left edge
             for word_width in word_widths:
                 positions.append(x_pos)
                 x_pos += word_width + space_width
@@ -118,13 +134,13 @@ class DocumentRenderer:
         elif alignment == TextAlignment.JUSTIFY:
             if len(words) == 1:
                 # Single word - align left
-                positions.append(self.doc_config.text_area_x)
+                positions.append(text_area_x)
             else:
                 # Distribute words across the line
-                available_space = self.doc_config.text_area_width - total_word_width
+                available_space = text_area_width - total_word_width
                 space_between_words = available_space / (len(words) - 1)
                 
-                x_pos = self.doc_config.text_area_x
+                x_pos = text_area_x
                 for word_width in word_widths:
                     positions.append(x_pos)
                     x_pos += word_width + space_between_words
@@ -135,12 +151,12 @@ class DocumentRenderer:
         """Calculate the width of a stroke sequence"""
         if len(strokes) == 0:
             return 0.0
-        return strokes[-1, 0] - strokes[0, 0]
+        return abs(strokes[-1, 0] - strokes[0, 0])
     
     def render_to_svg(self, line_layouts: List[LineLayout], filename: str, 
                      stroke_color: str = 'black', stroke_width: float = 1.0) -> str:
         """
-        Render the document to SVG format.
+        Render the document to SVG format with proper multi-page support.
         
         Args:
             line_layouts: List of line layouts to render
@@ -153,53 +169,116 @@ class DocumentRenderer:
         """
         svg_filename = f"{filename}.svg"
         
-        # Create SVG drawing
+        # Group lines by page
+        pages = {}
+        for line in line_layouts:
+            page_num = line.page_number
+            if page_num not in pages:
+                pages[page_num] = []
+            pages[page_num].append(line)
+        
+        # Calculate total document height (pages stacked vertically)
+        num_pages = len(pages) if pages else 1
+        total_height = num_pages * self.doc_config.page.height_px
+        
+        # Create SVG drawing with full document height
         dwg = svgwrite.Drawing(
             filename=svg_filename,
-            size=(self.doc_config.page.width_px, self.doc_config.page.height_px)
+            size=(self.doc_config.page.width_px, total_height)
         )
-        dwg.viewbox(width=self.doc_config.page.width_px, height=self.doc_config.page.height_px)
+        dwg.viewbox(width=self.doc_config.page.width_px, height=total_height)
         
-        # Add white background
-        dwg.add(dwg.rect(
-            insert=(0, 0),
-            size=(self.doc_config.page.width_px, self.doc_config.page.height_px),
-            fill='white'
-        ))
+        # Add CSS for page breaks when printing
+        dwg.defs.add(dwg.style("""
+            @media print {
+                .page {
+                    page-break-after: always;
+                    page-break-inside: avoid;
+                }
+                .page:last-child {
+                    page-break-after: auto;
+                }
+            }
+        """))
         
-        # Add text area border if enabled
-        if self.doc_config.draw_guidelines:
-            dwg.add(dwg.rect(
-                insert=(self.doc_config.text_area_x, self.doc_config.text_area_y),
-                size=(self.doc_config.text_area_width, self.doc_config.text_area_height),
+        # Render each page
+        for page_num in sorted(pages.keys()):
+            page_lines = pages[page_num]
+            page_type = PageType.ODD if page_num % 2 == 1 else PageType.EVEN
+            
+            # Calculate page Y offset
+            page_y_offset = (page_num - 1) * self.doc_config.page.height_px
+            
+            # Create page group
+            page_group = dwg.g(class_="page", id=f"page-{page_num}")
+            
+            # Add page background
+            page_group.add(dwg.rect(
+                insert=(0, page_y_offset),
+                size=(self.doc_config.page.width_px, self.doc_config.page.height_px),
+                fill='white',
                 stroke='lightgray',
-                fill='none',
                 stroke_width=0.5
             ))
             
-            # Add line guidelines
-            for i in range(1, self.doc_config.num_lines):
-                y = self.doc_config.text_area_y + i * self.doc_config.line_height
-                dwg.add(dwg.line(
-                    start=(self.doc_config.text_area_x, y),
-                    end=(self.doc_config.text_area_x + self.doc_config.text_area_width, y),
-                    stroke='lightgray',
-                    stroke_width=0.3
+            # Get page-specific margins and text area
+            text_area_x, text_area_y, text_area_width, text_area_height = self.doc_config.get_text_area(page_type)
+            
+            # Add text area border if enabled
+            if self.doc_config.draw_guidelines:
+                page_group.add(dwg.rect(
+                    insert=(text_area_x, text_area_y + page_y_offset),
+                    size=(text_area_width, text_area_height),
+                    stroke='lightblue',
+                    fill='none',
+                    stroke_width=0.5,
+                    opacity=0.3
                 ))
-        
-        # Render each line
-        for line_layout in line_layouts:
-            for word_layout in line_layout.words:
-                self._render_word_strokes(dwg, word_layout, stroke_color, stroke_width)
+                
+                # Add line guidelines
+                for i in range(1, self.doc_config.num_lines):
+                    y = text_area_y + page_y_offset + i * self.doc_config.line_height
+                    page_group.add(dwg.line(
+                        start=(text_area_x, y),
+                        end=(text_area_x + text_area_width, y),
+                        stroke='lightblue',
+                        stroke_width=0.3,
+                        opacity=0.3
+                    ))
+                
+                # Add page number
+                page_group.add(dwg.text(
+                    f"Page {page_num} ({'Odd' if page_type == PageType.ODD else 'Even'})",
+                    insert=(self.doc_config.page.width_px - 100, page_y_offset + 20),
+                    fill='gray',
+                    font_size='10px',
+                    text_anchor='end'
+                ))
+            
+            # Render lines on this page
+            for line_layout in page_lines:
+                for word_layout in line_layout.words:
+                    # Adjust word position for page offset
+                    adjusted_word = WordLayout(
+                        text=word_layout.text,
+                        strokes=word_layout.strokes,
+                        x_position=word_layout.x_position,
+                        y_position=word_layout.y_position + page_y_offset,
+                        width=word_layout.width,
+                        page_number=word_layout.page_number
+                    )
+                    self._render_word_strokes(page_group, adjusted_word, stroke_color, stroke_width)
+            
+            dwg.add(page_group)
         
         # Save SVG
         dwg.save()
-        print(f"SVG saved: {svg_filename}")
+        print(f"Multi-page SVG saved: {svg_filename} ({num_pages} pages)")
         
         return svg_filename
     
-    def _render_word_strokes(self, dwg: svgwrite.Drawing, word_layout: WordLayout, 
-                            stroke_color: str, stroke_width: float):
+    def _render_word_strokes(self, parent_group: svgwrite.container.Group, 
+                            word_layout: WordLayout, stroke_color: str, stroke_width: float):
         """Render strokes for a single word"""
         if len(word_layout.strokes) == 0:
             return
@@ -233,22 +312,25 @@ class DocumentRenderer:
         if path_data.strip():
             path = svgwrite.path.Path(path_data)
             path = path.stroke(color=stroke_color, width=stroke_width, linecap='round').fill("none")
-            dwg.add(path)
+            parent_group.add(path)
     
     def create_document_metadata(self, line_layouts: List[LineLayout]) -> Dict:
         """Create metadata about the rendered document"""
         total_words = sum(len(line.words) for line in line_layouts)
         total_chars = sum(sum(len(word.text) for word in line.words) for line in line_layouts)
         
+        # Count pages
+        pages = set(line.page_number for line in line_layouts)
+        num_pages = len(pages) if pages else 1
+        
         return {
             'timestamp': datetime.now().isoformat(),
             'total_lines': len(line_layouts),
             'total_words': total_words,
             'total_characters': total_chars,
+            'total_pages': num_pages,
             'page_config': {
                 'width_px': self.doc_config.page.width_px,
                 'height_px': self.doc_config.page.height_px,
-                'text_area_width': self.doc_config.text_area_width,
-                'text_area_height': self.doc_config.text_area_height,
             }
         }

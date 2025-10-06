@@ -81,8 +81,8 @@ class TextConfig:
 class TextStyle:
     """Text styling configuration"""
     alignment: TextAlignment = TextAlignment.JUSTIFY
-    bias: float = 1.5
-    style: int = 6
+    bias: float = 1.75
+    style: int = 20
     scale: float = 0.8
     font_size: float = 18.0
     line_spacing: float = 1.2

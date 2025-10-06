@@ -443,7 +443,8 @@ class AdvancedHandwritingSynthesizer:
                     style=block_info['style'],
                     text_area_x=text_area_x,
                     text_area_y=text_area_y,
-                    text_area_width=text_area_width
+                    text_area_width=text_area_width,
+                    page_number=current_page
                 )
                 
                 all_line_layouts.append(line_layout)
@@ -590,12 +591,18 @@ class AdvancedHandwritingSynthesizer:
         return fitted_words, []
     
     def _create_simple_line_layout(self, word_texts, strokes_list, line_number, style, 
-                                 text_area_x, text_area_y, text_area_width):
+                                 text_area_x, text_area_y, text_area_width, page_number=1):
         """Create line layout using simple positioning"""
-        from core.document_renderer import LineLayout, WordLayout
+        from core.document_renderer import LineLayout, WordLayout, PageType
         
-        # Calculate Y position
-        y_position = text_area_y + (line_number * self.doc_config.line_height)
+        # Determine page type
+        page_type = PageType.ODD if page_number % 2 == 1 else PageType.EVEN
+        
+        # Calculate line number within the page
+        line_within_page = line_number % self.doc_config.num_lines
+        
+        # Calculate Y position within the page
+        y_position = text_area_y + (line_within_page * self.doc_config.line_height)
         
         # Calculate word positions
         word_positions = self._calculate_simple_word_positions(
@@ -617,14 +624,17 @@ class AdvancedHandwritingSynthesizer:
                 strokes=scaled_strokes,
                 x_position=x_pos,
                 y_position=y_position,
-                width=word_width * style.scale
+                width=word_width * style.scale,
+                page_number=page_number
             ))
         
         return LineLayout(
             words=word_layouts,
-            line_number=line_number,
+            line_number=line_within_page,
             alignment=style.alignment,
-            y_position=y_position
+            y_position=y_position,
+            page_number=page_number,
+            page_type=page_type
         )
     
     def _calculate_simple_word_positions(self, word_texts, strokes_list, alignment, 
