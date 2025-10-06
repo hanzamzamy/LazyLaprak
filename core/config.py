@@ -124,9 +124,11 @@ class DocumentConfig:
         bottom_px = int(bottom * self.page.cm_to_px)
         
         x = left_px
-        y = top_px
+        # Adjust top margin to account for text baseline (add font height)
+        y = top_px + int(text_config.font_height)  # Start at baseline, not top of text
         width = self.page.width_px - left_px - right_px
-        height = self.page.height_px - top_px - bottom_px
+        # Adjust height to account for baseline positioning
+        height = self.page.height_px - top_px - bottom_px - int(text_config.font_height)
         
         return (x, y, width, height)
     

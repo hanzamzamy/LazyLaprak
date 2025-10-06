@@ -41,23 +41,12 @@ class DocumentRenderer:
                           line_number: int, alignment: TextAlignment, 
                           page_number: int = 1, page_type: PageType = PageType.ODD) -> LineLayout:
         """
-        Create layout information for a line of text.
-        
-        Args:
-            words: List of words in the line
-            strokes_list: List of stroke arrays for each word
-            line_number: Line number within the page (0-indexed)
-            alignment: Text alignment for this line
-            page_number: Page number (1-indexed)
-            page_type: Odd or even page type
-            
-        Returns:
-            LineLayout object with positioning information
+        Create layout information for a line of text with proper baseline positioning.
         """
         # Get page-specific margins and text area
         text_area_x, text_area_y, text_area_width, text_area_height = self.doc_config.get_text_area(page_type)
         
-        # Calculate Y position within the page
+        # Calculate Y position for text BASELINE (text_area_y is already adjusted for baseline)
         y_position = text_area_y + (line_number * self.doc_config.line_height)
         
         # Calculate word positions based on alignment
@@ -74,7 +63,7 @@ class DocumentRenderer:
                 text=word,
                 strokes=strokes,
                 x_position=x_pos,
-                y_position=y_position,
+                y_position=y_position,  # This is now the baseline position
                 width=word_width,
                 page_number=page_number
             ))
@@ -279,7 +268,7 @@ class DocumentRenderer:
     
     def _render_word_strokes(self, parent_group: svgwrite.container.Group, 
                             word_layout: WordLayout, stroke_color: str, stroke_width: float):
-        """Render strokes for a single word"""
+        """Render strokes for a single word with proper baseline positioning"""
         if len(word_layout.strokes) == 0:
             return
         
@@ -289,13 +278,16 @@ class DocumentRenderer:
         
         # Position the word
         if len(strokes) > 0:
-            # Normalize to start at (0,0)
-            strokes[:, 0] -= strokes[0, 0]
-            strokes[:, 1] -= strokes[:, 1].min()
+            # Normalize strokes
+            strokes[:, 0] -= strokes[0, 0]  # Start at x=0
             
-            # Apply positioning
+            # For Y positioning: word_layout.y_position is the baseline
+            # We need to position the strokes so their baseline aligns with this
+            stroke_bottom = strokes[:, 1].max()  # Bottom of the strokes
+            strokes[:, 1] = word_layout.y_position - (strokes[:, 1] - stroke_bottom)
+            
+            # Apply X positioning
             strokes[:, 0] += word_layout.x_position
-            strokes[:, 1] = word_layout.y_position - strokes[:, 1]  # Flip Y and position
         
         # Generate SVG path
         path_data = ""

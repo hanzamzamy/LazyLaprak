@@ -6,7 +6,7 @@ import re
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 
-from .config import document_config, calculate_text_width, PageType, TextStyle
+from .config import document_config, text_config, calculate_text_width, PageType, TextStyle
 from .markup_parser import MarkupParser, TextBlock
 
 @dataclass
@@ -163,34 +163,26 @@ class TextProcessor:
     
     def _fit_words_to_line(self, words: List[ProcessedWord], max_width: float, 
                           style: TextStyle) -> Tuple[List[ProcessedWord], List[ProcessedWord]]:
-        """Fit words to a line considering text style AND character limit"""
+        """Fit words to a line PRIORITIZING character limit over width"""
         fitted_words = []
-        current_width = 0.0
         current_chars = 0
-        space_width = calculate_text_width(' ', style.font_width)
         
         for i, word in enumerate(words):
-            word_width = word.estimated_width
             word_chars = len(word.text)
             
-            # Add space width if not first word
-            total_width = current_width + word_width
+            # Calculate total characters including space
             total_chars = current_chars + word_chars
             
             if fitted_words:
-                total_width += space_width
                 total_chars += 1  # Count the space
             
-            # Check both width and character limits
+            # Check CHARACTER limit FIRST (this is the primary constraint)
             from .config import text_config
-            width_ok = total_width <= max_width
-            chars_ok = total_chars <= text_config.max_chars_per_line
-            
-            if width_ok and chars_ok:
+            if total_chars <= text_config.max_chars_per_line:
                 fitted_words.append(word)
-                current_width = total_width
                 current_chars = total_chars
             else:
+                # Character limit exceeded
                 return fitted_words, words[i:]
         
         return fitted_words, []
