@@ -141,12 +141,12 @@ class DocumentConfig:
 # Predefined text styles
 PREDEFINED_STYLES = {
     'title': TextStyle(alignment=TextAlignment.CENTER, scale=1.2, font_size=24.0, bias=1.5),
-    'heading1': TextStyle(alignment=TextAlignment.LEFT, scale=1.0, font_size=20.0, bias=1.8),
-    'heading2': TextStyle(alignment=TextAlignment.LEFT, scale=0.9, font_size=18.0, bias=2.0),
-    'heading3': TextStyle(alignment=TextAlignment.LEFT, scale=0.8, font_size=16.0, bias=2.0),
-    'body': TextStyle(alignment=TextAlignment.JUSTIFY, scale=0.8, font_size=18.0, bias=2.0),
-    'quote': TextStyle(alignment=TextAlignment.CENTER, scale=0.7, font_size=16.0, bias=2.2),
-    'caption': TextStyle(alignment=TextAlignment.CENTER, scale=0.6, font_size=14.0, bias=2.5),
+    'heading1': TextStyle(alignment=TextAlignment.LEFT, scale=1.0, font_size=20.0, bias=1.5),
+    'heading2': TextStyle(alignment=TextAlignment.LEFT, scale=0.9, font_size=18.0, bias=1.5),
+    'heading3': TextStyle(alignment=TextAlignment.LEFT, scale=0.8, font_size=16.0, bias=1.5),
+    'body': TextStyle(alignment=TextAlignment.JUSTIFY, scale=0.8, font_size=18.0, bias=1.5),
+    'quote': TextStyle(alignment=TextAlignment.CENTER, scale=0.7, font_size=16.0, bias=1.5),
+    'caption': TextStyle(alignment=TextAlignment.CENTER, scale=0.6, font_size=14.0, bias=1.5),
 }
 
 # Character widths and valid characters (from original config)
